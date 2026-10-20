@@ -1,0 +1,13 @@
+.agent/
+.vscode/
+
+.old/
+
+possible_projects.md
+update_index_repo.py
+
+# Ignorar dados e modelos grandes
+data/*.h5
+data/*.csv
+*.h5
+*.keras
