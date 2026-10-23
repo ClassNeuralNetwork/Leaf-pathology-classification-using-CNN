@@ -255,6 +255,18 @@ drive.mount('/content/drive')
 3. **`ResNet50.ipynb`:** Treinamento da `ResNet50` em duas fases, avaliação no conjunto de teste isolado e auditoria visual com SHAP.
 4. **`propostas_futuras.md`:** Consulta à modelagem teórica do Grid Search (648 combinações), formulação matemática do Ensemble e roteiro de extensão futura.
 
+### 4. Modelos Treinados (Releases)
+Os modelos treinados não são versionados no repositório (`*.keras` consta no `.gitignore`) e estão disponíveis para download nas [Releases](https://github.com/ClassNeuralNetwork/Leaf-pathology-classification-using-CNN/releases):
+* **[v1.0.0 — DenseNet121](https://github.com/ClassNeuralNetwork/Leaf-pathology-classification-using-CNN/releases/tag/v1.0.0):** `baseline_densenet121_best.keras` (baseline natural) e `best_densenet121_clahe.keras` (realce CLAHE).
+* **[v1.1.0 — ResNet50](https://github.com/ClassNeuralNetwork/Leaf-pathology-classification-using-CNN/releases/tag/v1.1.0):** `resnet50_finetune_completo.keras` (melhores pesos da Fase 2 de *fine-tuning*).
+
+```python
+import tensorflow as tf
+
+model = tf.keras.models.load_model("resnet50_finetune_completo.keras")
+```
+As imagens de entrada devem receber o mesmo pré-processamento do treinamento: redimensionamento para $512 \times 512$ e o `preprocess_input` correspondente a cada arquitetura.
+
 ---
 
 ## Referências e Créditos
