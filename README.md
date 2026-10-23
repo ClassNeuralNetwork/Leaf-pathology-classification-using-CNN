@@ -1,4 +1,4 @@
-# Classificação de Patologias em Folhas com Redes Neurais Convolucionais e Explicabilidade (Grad-CAM)
+# Classificação de Patologias em Folhas com Redes Neurais Convolucionais e Explicabilidade (SHAP)
 
 Este projeto foi desenvolvido como parte da disciplina de **Redes Neurais Artificiais**, na Universidade Federal Rural do Semi-Árido (UFERSA).
 
@@ -8,9 +8,9 @@ Este projeto foi desenvolvido como parte da disciplina de **Redes Neurais Artifi
 
 Automated foliar disease diagnosis is vital for precision agriculture, early crop pathogen intervention, and targeted fungicide management. In apple orchards (*Malus domestica*), fungal infections such as cedar apple rust and apple scab cause devastating yield losses if left undetected, yet open-canopy imagery introduces challenging illumination variations, complex backgrounds, overlapping foliage, and co-occurring pathologies. This project presents an end-to-end deep learning framework developed on the *Plant Pathology 2020 – FGVC7* challenge dataset (CVPR 2020), classifying leaves into four mutually exclusive categories: *healthy*, *rust*, *scab*, and *multiple diseases*. 
 
-To overcome the severe representation deficit of the co-infection class (~5% of samples), a balanced class-weighting formulation is embedded directly into the categorical cross-entropy loss without synthetic distortion. The data pipeline leverages high-resolution representations ($512 \times 512$), asynchronous `tf.data` prefetching, GPU-accelerated stochastic augmentation, and in-memory tensor caching paired with automatic mixed-precision acceleration (`mixed_float16`). We evaluate a morphological ablation study comparing raw natural baselines against HSV-space Contrast Limited Adaptive Histogram Equalization (CLAHE), followed by a unified benchmarking protocol across five topologically distinct convolutional architectures (`DenseNet121`, `EfficientNetV2B0`, `ResNet50V2`, `ConvNeXtTiny`, and `Xception`). Finally, model predictions are audited using Explainable Artificial Intelligence (XAI) via Grad-CAM and Grad-CAM++, visually confirming that convolutional attention maps localize genuine botanical lesions (rust pustules and necrotic spots) rather than spurious background artifacts.
+To overcome the severe representation deficit of the co-infection class (~5% of samples), a balanced class-weighting formulation is embedded directly into the categorical cross-entropy loss without synthetic distortion. The data pipeline leverages high-resolution representations ($512 \times 512$), asynchronous `tf.data` prefetching, GPU-accelerated stochastic augmentation, and in-memory tensor caching paired with automatic mixed-precision acceleration (`mixed_float16`). Two transfer-learning architectures were developed, one by each team member: a fully fine-tuned `DenseNet121`, used in a morphological ablation study comparing raw natural baselines against HSV-space Contrast Limited Adaptive Histogram Equalization (CLAHE), and a `ResNet50` trained in two stages (frozen backbone followed by fine-tuning of the `conv5` block) and evaluated on an isolated stratified test split. Finally, model predictions are audited using Explainable Artificial Intelligence (XAI) via SHAP (`GradientExplainer`), assessing whether pixel-level attributions localize genuine botanical lesions (rust pustules and necrotic spots) rather than spurious background artifacts.
 
-**Keywords:** Plant Pathology, Deep Learning, Convolutional Neural Networks (CNN), Explainable AI (XAI), Grad-CAM, Class Imbalance, Precision Agriculture.
+**Keywords:** Plant Pathology, Deep Learning, Convolutional Neural Networks (CNN), Explainable AI (XAI), SHAP, Class Imbalance, Precision Agriculture.
 
 ---
 
@@ -26,10 +26,10 @@ O desafio reside na complexidade visual das imagens em ambiente aberto: variaç�
 
 Desenvolver e comparar modelos de Redes Neurais Convolucionais profundas capazes de diagnosticar o estado fitopatológico de folhas de macieira com alta acurácia e generalização, garantindo:
 
-1. **Preservação de Rigor Anti-Vazamento:** Divisão estratificada de treino e validação prévia a qualquer transformação.
+1. **Preservação de Rigor Anti-Vazamento:** Divisão estratificada dos dados prévia a qualquer transformação.
 2. **Estudos de Ablação de Pré-processamento:** Avaliação comparativa entre baseline natural (`single`), realce adaptativo CLAHE no canal V do HSV (`improved`).
-3. **Benchmarking Sistemático de Arquiteturas:** Comparação entre famílias arquiteturais consagradas sob hiperparâmetros fixados (`DenseNet121`, `EfficientNetV2B0`, `ResNet50V2`, `ConvNeXtTiny`, `Xception`).
-4. **Auditoria Visual (*XAI*):** Mapeamento térmico via **Grad-CAM / Grad-CAM++** (`04_xai_gradcam.ipynb`) para certificar que a rede toma decisões fundamentadas nas lesões das folhas e não em ruídos de fundo.
+3. **Desenvolvimento de Arquiteturas Pré-Treinadas:** Uma arquitetura por integrante da dupla (`DenseNet121` e `ResNet50`), ambas com *Transfer Learning* a partir da ImageNet.
+4. **Auditoria Visual (*XAI*):** Mapas de contribuição por pixel via **SHAP** (`ResNet50.ipynb`) para certificar que a rede toma decisões fundamentadas nas lesões das folhas e não em ruídos de fundo.
 5. **Documentação de Propostas Futuras:** Formalização metodológica de **Grid Search** e **Ensemble de Modelos** consolidada em [propostas_futuras.md](propostas_futuras.md).
 
 ---
@@ -63,7 +63,7 @@ Foi utilizado o conjunto de dados oficial da competição internacional **Plant 
 | **healthy** | ~516 | 28.3% | Superfície verde uniforme sem lesões |
 | **multiple_diseases** | **~91** | **5.0%** | Coocorrência de ferrugem e sarna *(classe minoritária)* |
 
-> **Desbalanceamento:** A extrema raridade da classe `multiple_diseases` (~5%) exige mecanismos ativos como divisão estratificada (`StratifiedKFold`), pesos de classe (`class_weight`) para evitar que a rede se torne cega à classe minoritária.
+> **Desbalanceamento:** A extrema raridade da classe `multiple_diseases` (~5%) exige mecanismos ativos como divisão estratificada (`train_test_split(..., stratify=y)`) e pesos de classe (`class_weight`) para evitar que a rede se torne cega à classe minoritária.
 
 ---
 
@@ -74,26 +74,27 @@ Foi utilizado o conjunto de dados oficial da competição internacional **Plant 
        ↓
 [01. EDA: Análise Morfológica e Filtros OpenCV (GaussianBlur, Canny, CLAHE)]
        ↓
-[02. PoC & Estudos de Ablação: Baseline Natural (02_pipeline_single.ipynb) vs. CLAHE (02_pipeline_improved.ipynb)]
+[Divisão Estratificada + Pesos de Classe Balanceados (class_weight)]
        ↓
-[Pipeline tf.data: Caching Estratégico em RAM + Data Augmentation em Batch + Mixed Precision (float16)]
-       ↓
-[Base Convolucional Fine-Tuned (trainable=True, lr=1e-4) + GAP + Dropout(0.3) + Dense(4, float32)]
-       ↓
-[03. Benchmarking de Arquiteturas: DenseNet121, EfficientNetV2B0, ResNet50V2, ConvNeXtTiny, Xception]
-       ↓
-[04. Explicabilidade Visual com Grad-CAM / Grad-CAM++ (04_xai_gradcam.ipynb)]
+       ├── [02. DenseNet121: Baseline Natural (02_pipeline_single.ipynb) vs. CLAHE (02_pipeline_improved.ipynb)]
+       │       Pipeline tf.data: Caching Estratégico em RAM + Data Augmentation em Batch + Mixed Precision (float16)
+       │       Base Convolucional Fine-Tuned (trainable=True, lr=1e-4) + GAP + Dropout(0.3) + Dense(4, float32)
+       │
+       └── [ResNet50: Treinamento em Duas Fases (ResNet50.ipynb)]
+               Divisão Treino / Validação / Teste (70/15/15) + Data Augmentation no Treino
+               Fase 1: Base Congelada (lr=1e-3) → Fase 2: Fine-Tuning do Bloco conv5 (lr=1e-5)
+               Avaliação em Teste Isolado + Explicabilidade com SHAP (GradientExplainer)
        ↓
 [Documentação Teórica de Propostas Futuras: Grid Search e Ensemble (propostas_futuras.md)]
 ```
 
-### 1. Pré-processamento e Estudos de Ablação
+### 1. Pré-processamento e Estudos de Ablação (DenseNet121)
 * **Análise Morfológica e Filtros (na EDA):** `cv2.GaussianBlur` para atenuação de ruído e `cv2.Canny` para destacar bordas das pústulas.
 * **Estudo de Ablação no Pipeline:**
   * **Baseline (`02_pipeline_single.ipynb`):** Imagens naturais sem filtros adicionais em alta resolução ($512 \times 512$).
   * **Realce Adaptativo CLAHE (`02_pipeline_improved.ipynb`):** Equalização adaptativa local no canal de luminância ($V$) do espaço de cor HSV para destacar pústulas e lesões necróticas sutis, preservando a matriz tridimensional (RGB) para Transfer Learning.
 
-### 2. Pipeline Assíncrono com `tf.data` e Caching Estratégico
+### 2. Pipeline Assíncrono com `tf.data` e Caching Estratégico (DenseNet121)
 * **Resolução Alta (512x512):** Preservação de microdetalhes das pústulas e lesões foliares via decodificação eficiente `tf.io.read_file`.
 * **Caching Estratégico em RAM (`.cache()`):** Qualquer pré-processamento determinístico roda apenas na 1ª época e é mantido em memória, garantindo 100% de utilização da GPU da 2ª época em diante.
 * **Precisão Mista (`mixed_float16`):** Redução do consumo de VRAM em 50% e aceleração computacional de até 3x na GPU Tesla T4 (Colab) ou RTX, com camada final de classificação em `float32` para estabilidade numérica.
@@ -106,17 +107,14 @@ Foi utilizado o conjunto de dados oficial da competição internacional **Plant 
 
 ## Arquiteturas Avaliadas e Modelagem
 
-Dentre as 9 famílias de arquiteturas disponíveis no Keras Applications, selecionou-se **um conjunto de cinco arquiteturas** para análise e triagem técnica:
+Dentre as 9 famílias de arquiteturas disponíveis no Keras Applications, selecionou-se **um conjunto de duas arquiteturas**, uma desenvolvida por cada integrante da dupla:
 
 | Família | Versão Avaliada | Decisão | Justificativa Técnica para Descarte / Seleção |
 | :--- | :--- | :---: | :--- |
-| **DenseNet** | `DenseNet121` | **BASE** | Conexões densas concatenam mapas de todas as camadas. Validada na PoC com excelente convergência e baixo consumo de parâmetros. Modelo baseline de referência para o benchmarking. |
-| **EfficientNetV2** | `EfficientNetV2B0` | **SELECIONADA** | Evolução da V1. Substitui as primeiras camadas por **Fused-MBConv**, acelerando o treino na GPU, além de incorporar atenção de canal (*Squeeze-and-Excitation*). Alta complementaridade com a DenseNet. |
-| **ResNet** | `ResNet50V2` | **SELECIONADA** | Padrão-ouro em conexões residuais aditivas ($x + \mathcal{F}(x)$). A versão V2 utiliza pré-ativação (BN e ReLU antes das convoluções), garantindo fluxo direto de gradientes. Erros ortogonais aos da DenseNet. |
-| **ConvNeXt** | `ConvNeXtTiny` | **SELECIONADA** | Representa o estado da arte convolucional (2022). Incorpora conceitos de *Vision Transformers* (kernels grandes 7x7, ativação GELU, LayerNorm), capturando contexto espacial amplo das folhas de macieira. |
-| **Xception** | `Xception` | **SELECIONADA** | Convoluções separáveis em profundidade com desacoplamento espacial/canal. Excelente capacidade de extração com parametrização eficiente. |
+| **DenseNet** | `DenseNet121` | **SELECIONADA** | Conexões densas concatenam mapas de todas as camadas. Validada na PoC com excelente convergência e baixo consumo de parâmetros. |
+| **ResNet** | `ResNet50` | **SELECIONADA** | Padrão-ouro em conexões residuais aditivas ($x + \mathcal{F}(x)$), que permitem treinar redes profundas sem degradação do gradiente. Utilizada com pesos da ImageNet e *fine-tuning* do último bloco convolucional (`conv5`). |
 
-### Cabeçalho de Classificação Enxuto (Head):
+### Cabeçalho de Classificação Enxuto (Head) — DenseNet121:
 ```python
 x = base_model.output
 x = layers.GlobalAveragePooling2D()(x)
@@ -124,7 +122,7 @@ x = layers.Dropout(0.3)(x)
 outputs = layers.Dense(4, activation='softmax', dtype='float32')(x)
 ```
 
-### Mecanismos de Treinamento, Pesos e Callbacks:
+### Mecanismos de Treinamento, Pesos e Callbacks — DenseNet121:
 * **Pesos de Classe Balanceados (`class_weight`):**
   - Devido ao desbalanceamento severo da classe minoritária `multiple_diseases` (~5% do dataset), calcula-se os pesos inversamente proporcionais às frequências das classes via Scikit-Learn:
     ```python
@@ -144,23 +142,31 @@ outputs = layers.Dense(4, activation='softmax', dtype='float32')(x)
 
 ---
 
-## Benchmarking de Arquiteturas Pré-Treinadas - `03_benchmark_models.ipynb`
+## DenseNet121 com Estudo de Ablação CLAHE - `02_pipeline_single.ipynb` / `02_pipeline_improved.ipynb`
 
-Avaliação sistemática dos backbones selecionados sob protocolo experimental unificado:
-1. **Modelos Avaliados:** `DenseNet121` (referência PoC), `EfficientNetV2B0`, `ResNet50V2`, `ConvNeXtTiny` e `Xception`.
+Treinamento da `DenseNet121` pré-treinada na ImageNet sob protocolo experimental unificado nos dois cadernos:
+1. **Modelo:** `DenseNet121` com *fine-tuning* completo da base convolucional (`trainable=True`).
 2. **Hiperparâmetros Fixados:** Resolução `512x512`, `Batch Size = 16`, otimizador `Adam(1e-4)`, precisão mista `mixed_float16`, `Dropout(0.3)`, ponderação `class_weight` balanceada (Scikit-Learn: `healthy`: 0.8814, `multiple_diseases`: 4.9863, `rust`: 0.7324, `scab`: 0.7696).
-3. **Métricas Consolidadas:** Geração de `models/models_benchmark_comparison.csv` e `graphs/models_benchmark_comparison.png` contendo parâmetros, tempo/época, `val_loss`, `val_accuracy`, `macro_roc_auc` e `macro_f1`.
+3. **Estudo de Ablação:** Mesmo regime de treinamento aplicado às imagens naturais (`02_pipeline_single.ipynb`) e às imagens com realce CLAHE (`02_pipeline_improved.ipynb`).
+4. **Artefatos Gerados:** Curvas de treinamento, matrizes de confusão e curvas ROC em `graphs/`; relatórios de classificação e históricos de treinamento em `models/`.
 
 ---
 
-## Inteligência Artificial Explicável (XAI) - `04_xai_gradcam.ipynb`
+## ResNet50 com Fine-Tuning e Explicabilidade SHAP - `ResNet50.ipynb`
 
-Para validar a confiabilidade do diagnóstico automatizado, implementa-se o algoritmo **Grad-CAM (Gradient-weighted Class Activation Mapping)** e **Grad-CAM++**:
+Treinamento da `ResNet50` pré-treinada na ImageNet em duas fases, com avaliação em conjunto de teste isolado e auditoria visual via SHAP:
 
-1. **Cálculo de Gradientes:** Extração dos gradientes da pontuação da classe predita em relação aos mapas de ativação da última camada convolucional dos modelos campeões.
-2. **Ponderação e ReLU:** Média global dos gradientes gerando os pesos de importância de cada canal, seguida de retificação ReLU para evidenciar apenas as feições com contribuição positiva.
-3. **Sobreposição de Mapa de Calor (*Heatmap*):** Mapas térmicos normalizados sobrepostos às fotografias originais em alta resolução.
-4. **Auditoria Qualitativa:** Confirmação visual de que o modelo foca nas lesões foliares reais (pústulas alaranjadas na ferrugem e manchas necróticas na sarna), ignorando artefatos de fundo (solo, dedos, hastes).
+1. **Divisão Treino / Validação / Teste (70/15/15):** `train_test_split` estratificado em duas etapas. A validação orienta os callbacks e o conjunto de teste é utilizado uma única vez, na avaliação final.
+2. **Pipeline `tf.data`:** Resolução $512 \times 512$, normalização `preprocess_input` da ResNet50 e *Data Augmentation* aplicado apenas no treino: espelhamentos horizontais/verticais, rotação ($0.1$), zoom ($0.1$) e brilho ($0.1$).
+3. **Pesos de Classe Balanceados (`class_weight`):** Mesmo cálculo via Scikit-Learn descrito acima, restrito ao conjunto de treino.
+4. **Cabeçalho de Classificação:** `GlobalAveragePooling2D` → `Dense(256, ReLU)` → `Dropout(0.4)` → `Dense(4, Softmax)`.
+5. **Treinamento em Duas Fases:**
+   * **Fase 1:** Base convolucional congelada, treinando apenas o cabeçalho com `Adam(1e-3)`.
+   * **Fase 2 (*Fine-Tuning*):** Descongelamento do bloco `conv5` com `Adam(1e-5)`, mantendo as camadas de `BatchNormalization` congeladas para preservar as estatísticas da ImageNet.
+6. **Callbacks:** `ModelCheckpoint`, `EarlyStopping` e `ReduceLROnPlateau` monitorando `val_loss`.
+7. **Métricas no Teste:** Acurácia, *macro F1*, ROC-AUC macro e por classe, e matrizes de confusão absoluta e normalizada, com rótulos traduzidos para o português.
+8. **Explicabilidade com SHAP (`GradientExplainer`):** Mapas de contribuição por pixel para as 4 classes, aplicados a um acerto de cada classe e a erros do conjunto de teste, verificando se a decisão se apoia nas lesões foliares.
+9. **Artefatos Gerados:** Exemplos de *Data Augmentation*, curvas de treinamento, matrizes de confusão no teste e mapas SHAP em `graphs/` (prefixo `resnet50_finetune_`); relatório de classificação do teste em `models/`.
 
 ---
 
@@ -168,7 +174,7 @@ Para validar a confiabilidade do diagnóstico automatizado, implementa-se o algo
 
 As formulações metodológicas que foram registradas como trabalhos futuros e referências de extensão estão consolidadas no arquivo [propostas_futuras.md](propostas_futuras.md):
 
-1. **Busca em Grade (*Grid Search*):** Modelagem teórica do espaço cartesiano de 648 combinações de hiperparâmetros e justificativa metodológica de por que a busca exaustiva foi substituída pelo benchmarking direcionado de backbones.
+1. **Busca em Grade (*Grid Search*):** Modelagem teórica do espaço cartesiano de 648 combinações de hiperparâmetros e justificativa metodológica para a não realização da busca exaustiva.
 2. **Ensemble de Modelos:** Teorema de redução de variância, formulações de fusão (*Soft Voting*, *Weighted Blending* por ROC-AUC, SLSQP e *Stacking*) e pipeline completo de inferência para `data/submission.csv`.
 3. **Extensões Competitivas:** Test-Time Augmentation (TTA), validação cruzada em 5 dobras (*5-Fold CV*) e calibração de temperatura (*Temperature Scaling*).
 
@@ -177,40 +183,38 @@ As formulações metodológicas que foram registradas como trabalhos futuros e r
 ## Estrutura do Repositório
 
 ```
-neural-networks/unidade-2/projeto/
+Leaf-pathology-classification-using-CNN/
 │
-├── data/                               # Diretório de dados (Kaggle Plant Pathology 2020)
+├── data/                               # Diretório de dados (Kaggle Plant Pathology 2020, não versionado)
 │   ├── images/                         # Imagens em alta resolução (.jpg)
 │   ├── train.csv                       # Metadados e rótulos de treino (1.821 amostras)
 │   ├── test.csv                        # Lista de IDs para teste (1.821 amostras)
-│   ├── sample_submission.csv           # Formato de submissão da competição
-│   └── submission.csv                  # Submissão oficial formatada para o Kaggle
+│   └── sample_submission.csv           # Formato de submissão da competição
 │
 ├── graphs/                             # Figuras e gráficos em alta resolução (300 DPI)
-│   ├── loss_curve_{modelo}.png         # Curvas de perda treino vs validação
-│   ├── accuracy_auc_curve_{modelo}.png # Curvas de acurácia e ROC-AUC
-│   ├── confusion_matrix_{modelo}.png   # Matrizes absoluta e normalizada
-│   ├── roc_curve_multiclass_{modelo}.png # Curvas ROC One-vs-Rest por classe
-│   └── models_benchmark_comparison.png # Gráfico comparativo geral de backbones
+│   ├── pipeline_single_curves.png      # DenseNet121: Curvas de treinamento do baseline natural
+│   ├── pipeline_single_confusion_matrix.png # DenseNet121: Matrizes de confusão do baseline natural
+│   ├── clahe_enhancement_sample.png    # DenseNet121: Amostras com e sem realce CLAHE
+│   ├── training_curves_densenet121_clahe.png # DenseNet121: Curvas de treinamento com CLAHE
+│   ├── confusion_matrix_densenet121_clahe.png # DenseNet121: Matrizes de confusão com CLAHE
+│   ├── roc_curves_densenet121_clahe.png # DenseNet121: Curvas ROC One-vs-Rest por classe com CLAHE
+│   ├── resnet50_finetune_augmentation.png # ResNet50: Exemplos de Data Augmentation
+│   ├── resnet50_finetune_curvas.png    # ResNet50: Curvas de treinamento das duas fases
+│   ├── resnet50_finetune_matriz_confusao_teste.png # ResNet50: Matrizes de confusão no teste
+│   └── resnet50_finetune_shap_{n}_{resultado}_{classe}.png # ResNet50: Mapas SHAP de acertos e erros do teste
 │
-├── models/                             # Checkpoints e históricos de treinamento
-│   ├── best_{modelo}.keras             # Pesos ótimos salvos pelo ModelCheckpoint
-│   ├── history_{modelo}.csv            # Histórico época a época de cada execução
-│   ├── classification_report_{modelo}.csv # Relatório de métricas por classe
-│   └── models_benchmark_comparison.csv # Tabela comparativa do benchmarking
-│
-├── references/                         # Cadernos de referência do Kaggle
-│   ├── image-pre-processing-and-densenet.ipynb
-│   └── plant-pathology-2020-eda-models.ipynb
+├── models/                             # Relatórios e históricos de treinamento
+│   ├── baseline_densenet121_classification_report.csv # DenseNet121: Relatório de métricas por classe
+│   ├── baseline_densenet121_history.csv # DenseNet121: Histórico época a época do baseline
+│   ├── training_log_clahe.csv          # DenseNet121: Histórico época a época com CLAHE
+│   └── resnet50_finetune_classification_report_teste.csv # ResNet50: Relatório de métricas por classe no teste
 │
 ├── 01_eda.ipynb                        # Etapa 1: Análise Exploratória e testes OpenCV
-├── 02_pipeline_single.ipynb            # Etapa 2: PoC e Baseline Natural (512x512)
-├── 02_pipeline_improved.ipynb          # Etapa 2: Estudo de Ablação (Realce CLAHE no canal V)
-├── 03_benchmark_models.ipynb           # Etapa 3: Benchmarking das 5 arquiteturas selecionadas
-├── 04_xai_gradcam.ipynb                # Etapa 4: Explicabilidade visual (Grad-CAM / Grad-CAM++)
+├── 02_pipeline_single.ipynb            # Etapa 2: DenseNet121 com Baseline Natural (512x512)
+├── 02_pipeline_improved.ipynb          # Etapa 2: DenseNet121 com Estudo de Ablação (Realce CLAHE no canal V)
+├── ResNet50.ipynb                      # ResNet50 com Fine-Tuning em Duas Fases e Explicabilidade SHAP
 ├── propostas_futuras.md                # Documentação teórica consolidada de Grid Search e Ensemble
 │
-├── pre_training.py                     # Módulo Python com o catálogo de modelos Keras
 ├── strategy.md                         # Documento de planejamento e decisões técnicas
 └── README.md                           # Documentação oficial do projeto
 ```
@@ -224,6 +228,7 @@ neural-networks/unidade-2/projeto/
 - **Visão Computacional Clássica:** OpenCV (`cv2`)
 - **Manipulação de Dados:** Pandas, NumPy
 - **Métricas e Pré-processamento:** Scikit-Learn
+- **Explicabilidade (XAI):** SHAP
 - **Visualização Científica:** Matplotlib, Seaborn, Plotly
 - **Ambiente de Aceleração:** Google Colaboratory (GPU Tesla T4 / A100)
 
@@ -234,7 +239,7 @@ neural-networks/unidade-2/projeto/
 ### 1. Instalação de Dependências
 No seu ambiente virtual ou terminal:
 ```bash
-pip install tensorflow opencv-python pandas numpy scikit-learn matplotlib seaborn plotly
+pip install tensorflow opencv-python pandas numpy scikit-learn matplotlib seaborn plotly shap
 ```
 
 ### 2. Execução no Google Colab
@@ -246,10 +251,9 @@ drive.mount('/content/drive')
 
 ### 3. Sequência Recomendada de Execução
 1. **`01_eda.ipynb`:** Inspeção da distribuição de classes, canais de cor e demonstração visual de filtros OpenCV.
-2. **`02_pipeline_single.ipynb` / `02_pipeline_improved.ipynb`:** PoC e validação do estudo de ablação de pré-processamento (Baseline Natural vs. CLAHE no espaço HSV).
-3. **`03_benchmark_models.ipynb`:** Treinamento unificado e benchmarking comparativo dos 5 backbones selecionados (`DenseNet121`, `EfficientNetV2B0`, `ResNet50V2`, `ConvNeXtTiny`, `Xception`).
-4. **`04_xai_gradcam.ipynb`:** Auditoria visual das regiões de atenção com Grad-CAM / Grad-CAM++ sobre os melhores modelos campeões.
-5. **`propostas_futuras.md`:** Consulta à modelagem teórica do Grid Search (648 combinações), formulação matemática do Ensemble e roteiro de extensão futura.
+2. **`02_pipeline_single.ipynb` / `02_pipeline_improved.ipynb`:** Treinamento da `DenseNet121` e validação do estudo de ablação de pré-processamento (Baseline Natural vs. CLAHE no espaço HSV).
+3. **`ResNet50.ipynb`:** Treinamento da `ResNet50` em duas fases, avaliação no conjunto de teste isolado e auditoria visual com SHAP.
+4. **`propostas_futuras.md`:** Consulta à modelagem teórica do Grid Search (648 combinações), formulação matemática do Ensemble e roteiro de extensão futura.
 
 ---
 
@@ -257,19 +261,19 @@ drive.mount('/content/drive')
 
 Este trabalho foi fundamentado e estruturado a partir das técnicas e boas práticas desenvolvidas em dois projetos de referência da comunidade para a competição *Plant Pathology 2020 – FGVC7*:
 
-1. **[Image pre processing and DenseNet](references/image-pre-processing-and-densenet.ipynb)**
+1. **Image pre processing and DenseNet**
    * **Plataforma / Contexto:** Kaggle (*Plant Pathology 2020 - FGVC7*)
    * **Contribuição aproveitada no projeto:** Metodologia de análise visual e filtragem com OpenCV, incluindo filtros de suavização (`cv2.GaussianBlur`), detecção de bordas morfológicas (`cv2.Canny`) e a aplicação de realce adaptativo de contraste local (**CLAHE**) no espaço de cor HSV como técnica de pré-processamento aliada à `DenseNet121`.
 
-2. **[Plant Pathology 2020 - EDA, Models](references/plant-pathology-2020-eda-models.ipynb)**
+2. **Plant Pathology 2020 - EDA, Models**
    * **Plataforma / Contexto:** Kaggle (*Plant Pathology 2020 - FGVC7*)
    * **Contribuição aproveitada no projeto:** Metodologia de Análise Exploratória (EDA) aprofundada com distribuição estatística dos canais de cor RGB, pipeline assíncrono de alto rendimento em `tf.data.Dataset`, estratégias de *Transfer Learning* sobre múltiplos backbones modernos (`DenseNet`, `EfficientNet`, `NoisyStudent`) e a arquitetura de fusão de probabilidades em *Ensemble*.
 
 3. **Competição Oficial e Dataset:**
    * Thapa, R., Zhang, K., Snavely, N., Belongie, S., & Khan, A. (2020). *Plant Pathology 2020 – FGVC7 Challenge Dataset*. CVPR 2020 Workshop on Fine-Grained Visual Categorization. [Kaggle Competition](https://www.kaggle.com/c/plant-pathology-2020-fgvc7).
 
-4. **Metodologia de Explicabilidade (Grad-CAM):**
-   * Selvaraju, R. R., Cogswell, M., Das, A., Vedaldi, A., Parikh, D., & Batra, D. (2017). *Grad-CAM: Visual Explanations from Deep Networks via Gradient-Based Localization*. IEEE International Conference on Computer Vision (ICCV), pp. 618-626.
+4. **Metodologia de Explicabilidade (SHAP):**
+   * Lundberg, S. M., & Lee, S.-I. (2017). *A Unified Approach to Interpreting Model Predictions*. Advances in Neural Information Processing Systems 30 (NeurIPS 2017), pp. 4765-4774.
 
 ---
 
@@ -286,10 +290,10 @@ Este trabalho foi fundamentado e estruturado a partir das técnicas e boas prát
       </a>
     </td>
     <td align="center">
-      <a href="#">
-        <img src="https://avatars.githubusercontent.com/u/0?v=4" width="120px;" alt="Foto do Coautor"/><br>
+      <a href="https://github.com/pablonascimento1">
+        <img src="https://avatars.githubusercontent.com/u/159596872?v=4" width="120px;" alt="Foto do Autor"/><br>
         <sub>
-          <b>Coautor</b>
+          <b>Pablo</b>
          </sub>
       </a>
     </td>
