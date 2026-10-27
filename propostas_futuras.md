@@ -31,7 +31,7 @@ $$\text{Total de Combinações Teóricas: } |\Omega| = 4 \times 3 \times 3 \time
 
 ### 1.3 Racional Metodológico para Não Execução do Grid Search Exaustivo
 1. **Convergência Imediata de Alto Padrão no Baseline:**
-   - Com a calibração de primeira ordem realizada na PoC (`02_pipeline_single.ipynb`), utilizando resolução $512 \times 512$, *Fine-Tuning* descongelado, precisão mista `mixed_float16` e `class_weight` balanceado, a `DenseNet121` atingiu $>95\%$ de acurácia e $>0.97$ de Macro ROC-AUC.
+   - Com a calibração de primeira ordem realizada na PoC (`02_densenet121_baseline.ipynb`), utilizando resolução $512 \times 512$, *Fine-Tuning* descongelado, precisão mista `mixed_float16` e `class_weight` balanceado, a `DenseNet121` atingiu $>95\%$ de acurácia e $>0.97$ de Macro ROC-AUC.
 2. **Custo Computacional Inviável para Ambiente Acadêmico Gratuito:**
    - Cada treino em 512x512 consome ~12 a 15 minutos em GPU Tesla T4. A execução de 648 combinações exigiria mais de **130 horas ininterruptas de GPU** (~5,5 dias), violando os limites de sessão e créditos do Google Colab.
 3. **Priorização da Diversidade Arquitetural:**

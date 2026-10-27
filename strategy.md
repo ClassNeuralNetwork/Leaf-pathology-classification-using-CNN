@@ -9,9 +9,9 @@ Este documento consolida as **decisões técnicas, justificativas arquiteturais 
 
 | Etapa | Arquivo / Módulo | Objetivo Estratégico Principal |
 | :---: | :--- | :--- |
-| **01** | `01_eda.ipynb` | Análise exploratória visual, canais de cor, balanceamento e inspeção morfológica de filtros OpenCV |
-| **02** | `02_pipeline_single.ipynb` <br> `02_pipeline_improved.ipynb` | `DenseNet121` com Estudo de Ablação: Baseline Natural (sem filtros) vs. Realce Adaptativo CLAHE (Canal V do HSV) |
-| **03** | `ResNet50.ipynb` | `ResNet50` com treinamento em duas fases, avaliação em conjunto de teste isolado e explicabilidade visual (XAI) com SHAP |
+| **01** | `01_analise_exploratoria.ipynb` | Análise exploratória visual, canais de cor, balanceamento e inspeção morfológica de filtros OpenCV |
+| **02** | `02_densenet121_baseline.ipynb` <br> `03_densenet121_clahe.ipynb` | `DenseNet121` com Estudo de Ablação: Baseline Natural (sem filtros) vs. Realce Adaptativo CLAHE (Canal V do HSV) e explicabilidade visual (XAI) com SHAP |
+| **03** | `04_resnet50_finetuning.ipynb` | `ResNet50` com treinamento em duas fases, avaliação em conjunto de teste isolado e explicabilidade visual (XAI) com SHAP |
 
 > **Nota sobre Trabalhos Futuros:** As especificações formais de busca de hiperparâmetros (*Grid Search*) e combinação de modelos (*Ensemble*) foram centralizadas no arquivo [propostas_futuras.md](propostas_futuras.md), localizado ao final da documentação.
 
@@ -26,17 +26,17 @@ Este documento consolida as **decisões técnicas, justificativas arquiteturais 
 
 ## 2. Decisões Estratégicas por Etapa
 
-### Etapa 01: Análise Exploratória e Diagnóstico de Desbalanceamento (`01_eda.ipynb`)
+### Etapa 01: Análise Exploratória e Diagnóstico de Desbalanceamento (`01_analise_exploratoria.ipynb`)
 - **Diagnóstico de Raridade:** A classe `multiple_diseases` representa apenas ~5% das amostras (91 de 1.821). Definiu-se que nenhuma divisão de dados pode ser aleatória pura; o uso de `train_test_split(..., stratify=y)` e `class_weight` balanceado é mandatório.
 - **Triagem de Filtros OpenCV:** Filtros monocromáticos como `cv2.Canny` são restritos à inspeção morfológica na EDA. Para o pipeline de Deep Learning com pesos do ImageNet, qualquer transformação deve obrigatoriamente preservar 3 canais de cor.
 
 ### Etapa 02: DenseNet121 — Baseline Puro vs. Estudo de Ablação CLAHE
 Para isolar com precisão o ganho de técnicas clássicas de visão computacional, a Etapa 2 foi dividida em dois cadernos com regime idêntico de hiperparâmetros:
 
-1. **`02_pipeline_single.ipynb` (Baseline Natural - PoC):**
+1. **`02_densenet121_baseline.ipynb` (Baseline Natural - PoC):**
    - **Zero Pré-processamento OpenCV:** Imagens lidas em RGB e redimensionadas diretamente para $512 \times 512$, com normalização padrão do ImageNet aplicada internamente pelo modelo.
    - Serve como controle para verificar a capacidade de generalização da `DenseNet121` sem interferência de filtros morfológicos.
-2. **`02_pipeline_improved.ipynb` (Ablação V1 - Realce CLAHE):**
+2. **`03_densenet121_clahe.ipynb` (Ablação V1 - Realce CLAHE):**
    - **Realce no Canal V do HSV:** Aplica-se o CLAHE (*Contrast Limited Adaptive Histogram Equalization*) exclusivamente no canal de luminância ($V$) do espaço HSV, convertendo de volta para RGB tridimensional.
    - **Justificativa Estratégica:** Realça bordas e relevo de pústulas de ferrugem e lesões necróticas de sarna sem distorcer as coordenadas cromáticas ($H$ e $S$) da folha.
 3. **Eficiência Computacional Compartilhada:**
@@ -59,7 +59,13 @@ Para garantir que a comparação entre o baseline e a versão CLAHE seja estrita
   - `ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=1e-6)`
   - `ModelCheckpoint(filepath='models/best_{model_name}.keras', monitor='val_roc_auc', mode='max', save_best_only=True)`
 
-### Etapa 03: ResNet50 com Fine-Tuning em Duas Fases e SHAP (`ResNet50.ipynb`)
+#### 2.2 Explicabilidade Visual (XAI) com SHAP
+- **Método e Protocolo:** Mesmo protocolo da Etapa 03 (`shap.GradientExplainer`, *background* de 20 imagens do treino, `nsamples=100` e mapas das 4 classes), aplicado à validação de cada caderno.
+- **Modelo Explicado:** O melhor checkpoint é reconstruído em `float32` antes do SHAP, evitando a perda de precisão dos gradientes sob `mixed_float16`. As previsões do modelo reconstruído coincidem com as do treinamento (acurácia de 92,05% no baseline e 87,40% com CLAHE).
+- **Seleção das Imagens:** Um acerto de cada classe, até dois erros (priorizando `multiple_diseases`) e as folhas explicadas na Etapa 03 que pertencem a esta validação, permitindo comparar os dois modelos sobre a mesma imagem.
+- **Execução sem Retreinamento:** Se o checkpoint não estiver em `models/`, ele é baixado da release `v1.0.0`, de modo que a seção de SHAP pode ser executada sem repetir o treinamento.
+
+### Etapa 03: ResNet50 com Fine-Tuning em Duas Fases e SHAP (`04_resnet50_finetuning.ipynb`)
 
 #### 3.1 Divisão dos Dados e Desbalanceamento
 - **Treino / Validação / Teste (70/15/15):** `train_test_split` estratificado em duas etapas (1.274 / 273 / 274 amostras). A validação orienta os callbacks e o conjunto de teste é utilizado uma única vez, na avaliação final, evitando o viés otimista de selecionar e avaliar o modelo sobre o mesmo conjunto.
@@ -103,15 +109,16 @@ Para assegurar reprodutibilidade, os pipelines salvam estruturadamente:
    - `models/baseline_densenet121_history.csv` e `models/training_log_clahe.csv` (Evolução época a época de loss, acurácia, ROC-AUC e LR da `DenseNet121`)
    - `models/baseline_densenet121_classification_report.csv` (Precisão, Recall e F1 por classe da `DenseNet121`)
    - `models/resnet50_finetune_classification_report_teste.csv` (Precisão, Recall e F1 por classe da `ResNet50` no conjunto de teste)
-3. **Gráficos Científicos a 300 DPI (`graphs/`):**
-   - `graphs/pipeline_single_curves.png` e `graphs/training_curves_densenet121_clahe.png` (Curvas de treinamento da `DenseNet121`)
-   - `graphs/pipeline_single_confusion_matrix.png` e `graphs/confusion_matrix_densenet121_clahe.png` (Matrizes de confusão absoluta e normalizada)
-   - `graphs/roc_curves_densenet121_clahe.png` (Curvas ROC multiclasse One-vs-Rest)
-   - `graphs/clahe_enhancement_sample.png` (Amostras com e sem realce CLAHE)
-   - `graphs/resnet50_finetune_augmentation.png` (Exemplos de Data Augmentation da `ResNet50`)
-   - `graphs/resnet50_finetune_curvas.png` (Curvas de loss, acurácia, ROC-AUC e macro F1 das duas fases da `ResNet50`)
-   - `graphs/resnet50_finetune_matriz_confusao_teste.png` (Matrizes de confusão absoluta e normalizada da `ResNet50` no teste)
-   - `graphs/resnet50_finetune_shap_{n}_{resultado}_{classe}.png` (Mapas SHAP de acertos e erros do teste)
+3. **Gráficos Científicos (`graphs/`, no padrão `<modelo>_<tipo>.png`):**
+   - `graphs/densenet121_baseline_curvas.png` e `graphs/densenet121_clahe_curvas.png` (Curvas de treinamento da `DenseNet121`)
+   - `graphs/densenet121_baseline_matriz_confusao.png` e `graphs/densenet121_clahe_matriz_confusao.png` (Matrizes de confusão absoluta e normalizada)
+   - `graphs/densenet121_clahe_curvas_roc.png` (Curvas ROC multiclasse One-vs-Rest)
+   - `graphs/densenet121_clahe_amostras_realce.png` (Amostras com e sem realce CLAHE)
+   - `graphs/densenet121_baseline_shap_{n}_{resultado}_{classe}.png` e `graphs/densenet121_clahe_shap_{n}_{resultado}_{classe}.png` (Mapas SHAP de acertos e erros da validação da `DenseNet121`)
+   - `graphs/resnet50_augmentation.png` (Exemplos de Data Augmentation da `ResNet50`)
+   - `graphs/resnet50_curvas.png` (Curvas de loss, acurácia, ROC-AUC e macro F1 das duas fases da `ResNet50`)
+   - `graphs/resnet50_matriz_confusao.png` (Matrizes de confusão absoluta e normalizada da `ResNet50` no teste)
+   - `graphs/resnet50_shap_{n}_{resultado}_{classe}.png` (Mapas SHAP de acertos e erros do teste da `ResNet50`)
 
 ---
 

@@ -29,7 +29,7 @@ Desenvolver e comparar modelos de Redes Neurais Convolucionais profundas capazes
 1. **Preservação de Rigor Anti-Vazamento:** Divisão estratificada dos dados prévia a qualquer transformação.
 2. **Estudos de Ablação de Pré-processamento:** Avaliação comparativa entre baseline natural (`single`), realce adaptativo CLAHE no canal V do HSV (`improved`).
 3. **Desenvolvimento de Arquiteturas Pré-Treinadas:** Uma arquitetura por integrante da dupla (`DenseNet121` e `ResNet50`), ambas com *Transfer Learning* a partir da ImageNet.
-4. **Auditoria Visual (*XAI*):** Mapas de contribuição por pixel via **SHAP** (`ResNet50.ipynb`) para certificar que a rede toma decisões fundamentadas nas lesões das folhas e não em ruídos de fundo.
+4. **Auditoria Visual (*XAI*):** Mapas de contribuição por pixel via **SHAP** nos notebooks das duas arquiteturas para certificar que a rede toma decisões fundamentadas nas lesões das folhas e não em ruídos de fundo.
 5. **Documentação de Propostas Futuras:** Formalização metodológica de **Grid Search** e **Ensemble de Modelos** consolidada em [propostas_futuras.md](propostas_futuras.md).
 
 ---
@@ -76,11 +76,12 @@ Foi utilizado o conjunto de dados oficial da competição internacional **Plant 
        ↓
 [Divisão Estratificada + Pesos de Classe Balanceados (class_weight)]
        ↓
-       ├── [02. DenseNet121: Baseline Natural (02_pipeline_single.ipynb) vs. CLAHE (02_pipeline_improved.ipynb)]
+       ├── [02. DenseNet121: Baseline Natural (02_densenet121_baseline.ipynb) vs. CLAHE (03_densenet121_clahe.ipynb)]
        │       Pipeline tf.data: Caching Estratégico em RAM + Data Augmentation em Batch + Mixed Precision (float16)
        │       Base Convolucional Fine-Tuned (trainable=True, lr=1e-4) + GAP + Dropout(0.3) + Dense(4, float32)
+       │       Avaliação na Validação + Explicabilidade com SHAP (GradientExplainer)
        │
-       └── [ResNet50: Treinamento em Duas Fases (ResNet50.ipynb)]
+       └── [ResNet50: Treinamento em Duas Fases (04_resnet50_finetuning.ipynb)]
                Divisão Treino / Validação / Teste (70/15/15) + Data Augmentation no Treino
                Fase 1: Base Congelada (lr=1e-3) → Fase 2: Fine-Tuning do Bloco conv5 (lr=1e-5)
                Avaliação em Teste Isolado + Explicabilidade com SHAP (GradientExplainer)
@@ -91,8 +92,8 @@ Foi utilizado o conjunto de dados oficial da competição internacional **Plant 
 ### 1. Pré-processamento e Estudos de Ablação (DenseNet121)
 * **Análise Morfológica e Filtros (na EDA):** `cv2.GaussianBlur` para atenuação de ruído e `cv2.Canny` para destacar bordas das pústulas.
 * **Estudo de Ablação no Pipeline:**
-  * **Baseline (`02_pipeline_single.ipynb`):** Imagens naturais sem filtros adicionais em alta resolução ($512 \times 512$).
-  * **Realce Adaptativo CLAHE (`02_pipeline_improved.ipynb`):** Equalização adaptativa local no canal de luminância ($V$) do espaço de cor HSV para destacar pústulas e lesões necróticas sutis, preservando a matriz tridimensional (RGB) para Transfer Learning.
+  * **Baseline (`02_densenet121_baseline.ipynb`):** Imagens naturais sem filtros adicionais em alta resolução ($512 \times 512$).
+  * **Realce Adaptativo CLAHE (`03_densenet121_clahe.ipynb`):** Equalização adaptativa local no canal de luminância ($V$) do espaço de cor HSV para destacar pústulas e lesões necróticas sutis, preservando a matriz tridimensional (RGB) para Transfer Learning.
 
 ### 2. Pipeline Assíncrono com `tf.data` e Caching Estratégico (DenseNet121)
 * **Resolução Alta (512x512):** Preservação de microdetalhes das pústulas e lesões foliares via decodificação eficiente `tf.io.read_file`.
@@ -142,17 +143,18 @@ outputs = layers.Dense(4, activation='softmax', dtype='float32')(x)
 
 ---
 
-## DenseNet121 com Estudo de Ablação CLAHE - `02_pipeline_single.ipynb` / `02_pipeline_improved.ipynb`
+## DenseNet121 com Estudo de Ablação CLAHE e Explicabilidade SHAP - `02_densenet121_baseline.ipynb` / `03_densenet121_clahe.ipynb`
 
 Treinamento da `DenseNet121` pré-treinada na ImageNet sob protocolo experimental unificado nos dois cadernos:
 1. **Modelo:** `DenseNet121` com *fine-tuning* completo da base convolucional (`trainable=True`).
 2. **Hiperparâmetros Fixados:** Resolução `512x512`, `Batch Size = 16`, otimizador `Adam(1e-4)`, precisão mista `mixed_float16`, `Dropout(0.3)`, ponderação `class_weight` balanceada (Scikit-Learn: `healthy`: 0.8814, `multiple_diseases`: 4.9863, `rust`: 0.7324, `scab`: 0.7696).
-3. **Estudo de Ablação:** Mesmo regime de treinamento aplicado às imagens naturais (`02_pipeline_single.ipynb`) e às imagens com realce CLAHE (`02_pipeline_improved.ipynb`).
-4. **Artefatos Gerados:** Curvas de treinamento, matrizes de confusão e curvas ROC em `graphs/`; relatórios de classificação e históricos de treinamento em `models/`.
+3. **Estudo de Ablação:** Mesmo regime de treinamento aplicado às imagens naturais (`02_densenet121_baseline.ipynb`) e às imagens com realce CLAHE (`03_densenet121_clahe.ipynb`).
+4. **Explicabilidade com SHAP (`GradientExplainer`):** Mesmo protocolo da `ResNet50`, aplicado ao melhor checkpoint de cada caderno (reconstruído em `float32`) sobre um acerto de cada classe, erros da validação e as folhas também explicadas pela `ResNet50`.
+5. **Artefatos Gerados:** Curvas de treinamento, matrizes de confusão, curvas ROC e mapas SHAP em `graphs/` (prefixos `densenet121_baseline_` e `densenet121_clahe_`); relatórios de classificação e históricos de treinamento em `models/`.
 
 ---
 
-## ResNet50 com Fine-Tuning e Explicabilidade SHAP - `ResNet50.ipynb`
+## ResNet50 com Fine-Tuning e Explicabilidade SHAP - `04_resnet50_finetuning.ipynb`
 
 Treinamento da `ResNet50` pré-treinada na ImageNet em duas fases, com avaliação em conjunto de teste isolado e auditoria visual via SHAP:
 
@@ -166,7 +168,7 @@ Treinamento da `ResNet50` pré-treinada na ImageNet em duas fases, com avaliaç�
 6. **Callbacks:** `ModelCheckpoint`, `EarlyStopping` e `ReduceLROnPlateau` monitorando `val_loss`.
 7. **Métricas no Teste:** Acurácia, *macro F1*, ROC-AUC macro e por classe, e matrizes de confusão absoluta e normalizada, com rótulos traduzidos para o português.
 8. **Explicabilidade com SHAP (`GradientExplainer`):** Mapas de contribuição por pixel para as 4 classes, aplicados a um acerto de cada classe e a erros do conjunto de teste, verificando se a decisão se apoia nas lesões foliares.
-9. **Artefatos Gerados:** Exemplos de *Data Augmentation*, curvas de treinamento, matrizes de confusão no teste e mapas SHAP em `graphs/` (prefixo `resnet50_finetune_`); relatório de classificação do teste em `models/`.
+9. **Artefatos Gerados:** Exemplos de *Data Augmentation*, curvas de treinamento, matrizes de confusão no teste e mapas SHAP em `graphs/` (prefixo `resnet50_`); relatório de classificação do teste em `models/`.
 
 ---
 
@@ -191,17 +193,19 @@ Leaf-pathology-classification-using-CNN/
 │   ├── test.csv                        # Lista de IDs para teste (1.821 amostras)
 │   └── sample_submission.csv           # Formato de submissão da competição
 │
-├── graphs/                             # Figuras e gráficos em alta resolução (300 DPI)
-│   ├── pipeline_single_curves.png      # DenseNet121: Curvas de treinamento do baseline natural
-│   ├── pipeline_single_confusion_matrix.png # DenseNet121: Matrizes de confusão do baseline natural
-│   ├── clahe_enhancement_sample.png    # DenseNet121: Amostras com e sem realce CLAHE
-│   ├── training_curves_densenet121_clahe.png # DenseNet121: Curvas de treinamento com CLAHE
-│   ├── confusion_matrix_densenet121_clahe.png # DenseNet121: Matrizes de confusão com CLAHE
-│   ├── roc_curves_densenet121_clahe.png # DenseNet121: Curvas ROC One-vs-Rest por classe com CLAHE
-│   ├── resnet50_finetune_augmentation.png # ResNet50: Exemplos de Data Augmentation
-│   ├── resnet50_finetune_curvas.png    # ResNet50: Curvas de treinamento das duas fases
-│   ├── resnet50_finetune_matriz_confusao_teste.png # ResNet50: Matrizes de confusão no teste
-│   └── resnet50_finetune_shap_{n}_{resultado}_{classe}.png # ResNet50: Mapas SHAP de acertos e erros do teste
+├── graphs/                             # Figuras e gráficos (<modelo>_<tipo>.png)
+│   ├── densenet121_baseline_curvas.png               # DenseNet121: Curvas de treinamento do baseline natural
+│   ├── densenet121_baseline_matriz_confusao.png      # DenseNet121: Matrizes de confusão do baseline natural
+│   ├── densenet121_baseline_shap_{n}_{resultado}_{classe}.png # DenseNet121: Mapas SHAP do baseline natural
+│   ├── densenet121_clahe_amostras_realce.png         # DenseNet121: Amostras com e sem realce CLAHE
+│   ├── densenet121_clahe_curvas.png                  # DenseNet121: Curvas de treinamento com CLAHE
+│   ├── densenet121_clahe_matriz_confusao.png         # DenseNet121: Matrizes de confusão com CLAHE
+│   ├── densenet121_clahe_curvas_roc.png              # DenseNet121: Curvas ROC One-vs-Rest por classe com CLAHE
+│   ├── densenet121_clahe_shap_{n}_{resultado}_{classe}.png # DenseNet121: Mapas SHAP com CLAHE
+│   ├── resnet50_augmentation.png                     # ResNet50: Exemplos de Data Augmentation
+│   ├── resnet50_curvas.png                           # ResNet50: Curvas de treinamento das duas fases
+│   ├── resnet50_matriz_confusao.png                  # ResNet50: Matrizes de confusão no teste
+│   └── resnet50_shap_{n}_{resultado}_{classe}.png    # ResNet50: Mapas SHAP de acertos e erros do teste
 │
 ├── models/                             # Relatórios e históricos de treinamento
 │   ├── baseline_densenet121_classification_report.csv # DenseNet121: Relatório de métricas por classe
@@ -209,10 +213,10 @@ Leaf-pathology-classification-using-CNN/
 │   ├── training_log_clahe.csv          # DenseNet121: Histórico época a época com CLAHE
 │   └── resnet50_finetune_classification_report_teste.csv # ResNet50: Relatório de métricas por classe no teste
 │
-├── 01_eda.ipynb                        # Etapa 1: Análise Exploratória e testes OpenCV
-├── 02_pipeline_single.ipynb            # Etapa 2: DenseNet121 com Baseline Natural (512x512)
-├── 02_pipeline_improved.ipynb          # Etapa 2: DenseNet121 com Estudo de Ablação (Realce CLAHE no canal V)
-├── ResNet50.ipynb                      # ResNet50 com Fine-Tuning em Duas Fases e Explicabilidade SHAP
+├── 01_analise_exploratoria.ipynb       # Análise Exploratória e testes OpenCV
+├── 02_densenet121_baseline.ipynb       # DenseNet121 com Baseline Natural (512x512) e Explicabilidade SHAP
+├── 03_densenet121_clahe.ipynb          # DenseNet121 com Realce CLAHE no canal V e Explicabilidade SHAP
+├── 04_resnet50_finetuning.ipynb        # ResNet50 com Fine-Tuning em Duas Fases e Explicabilidade SHAP
 ├── propostas_futuras.md                # Documentação teórica consolidada de Grid Search e Ensemble
 │
 ├── strategy.md                         # Documento de planejamento e decisões técnicas
@@ -250,9 +254,9 @@ drive.mount('/content/drive')
 ```
 
 ### 3. Sequência Recomendada de Execução
-1. **`01_eda.ipynb`:** Inspeção da distribuição de classes, canais de cor e demonstração visual de filtros OpenCV.
-2. **`02_pipeline_single.ipynb` / `02_pipeline_improved.ipynb`:** Treinamento da `DenseNet121` e validação do estudo de ablação de pré-processamento (Baseline Natural vs. CLAHE no espaço HSV).
-3. **`ResNet50.ipynb`:** Treinamento da `ResNet50` em duas fases, avaliação no conjunto de teste isolado e auditoria visual com SHAP.
+1. **`01_analise_exploratoria.ipynb`:** Inspeção da distribuição de classes, canais de cor e demonstração visual de filtros OpenCV.
+2. **`02_densenet121_baseline.ipynb` / `03_densenet121_clahe.ipynb`:** Treinamento da `DenseNet121`, validação do estudo de ablação de pré-processamento (Baseline Natural vs. CLAHE no espaço HSV) e auditoria visual com SHAP.
+3. **`04_resnet50_finetuning.ipynb`:** Treinamento da `ResNet50` em duas fases, avaliação no conjunto de teste isolado e auditoria visual com SHAP.
 4. **`propostas_futuras.md`:** Consulta à modelagem teórica do Grid Search (648 combinações), formulação matemática do Ensemble e roteiro de extensão futura.
 
 ### 4. Modelos Treinados (Releases)
